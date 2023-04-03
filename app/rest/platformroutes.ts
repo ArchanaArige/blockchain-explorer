@@ -3,6 +3,14 @@
  */
 
 import * as requtil from './requestutils';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as FabricConst from '../platform/fabric/utils/FabricConst';
+const fabric_const = FabricConst.fabric.const;
+const config_path = path.resolve(__dirname, '../platform/fabric/config.json');
+const all_config = JSON.parse(fs.readFileSync(config_path, 'utf8'));
+const network_configs = all_config[fabric_const.NETWORK_CONFIGS];
+
 
 /**
  *
@@ -190,15 +198,18 @@ export async function platformroutes(
 	router.get('/fetchDataByBlockNo/:channel_genesis_hash/:blockNo', (req, res) => {
 		const blockNo = parseInt(req.params.blockNo);
 		const channel_genesis_hash = req.params.channel_genesis_hash;
+		if (!isNaN(blockNo) && channel_genesis_hash) {
 		proxy.fetchDataByBlockNo(req.network, channel_genesis_hash, blockNo).then((data: any) => {
 			if (data != "response_payloads is null") {
 				res.send({ status: 200, data: data });
-			}
-			else{
+			} else {
 				res.send({ status: 404, data: "Block not found" });
 			}
 		});
-	});
+	    } else {
+			return requtil.invalidRequest(req, res);
+	    }
+    });
 
 	/**
 	 * *
@@ -210,21 +221,33 @@ export async function platformroutes(
 		const startBlockNo = parseInt(req.params.startBlockNo);
 		const endBlockNo = parseInt(req.params.endBlockNo);
 		const channel_genesis_hash = req.params.channel_genesis_hash;
-		if (startBlockNo < endBlockNo) {
+		if (
+			startBlockNo <= endBlockNo &&
+			startBlockNo >= 0 &&
+			endBlockNo >= 0 &&
+			!isNaN(startBlockNo) &&
+			!isNaN(endBlockNo) &&
+			channel_genesis_hash
+		) {
+			const blockRangeLimit = network_configs[req.network].blockRangeLimit;
+			if (endBlockNo - startBlockNo <= blockRangeLimit) {
 			proxy.fetchDataByBlockRange(req.network, channel_genesis_hash, startBlockNo, endBlockNo).then((data: any) => {
 				if (data != "response_payloads is null") {
 					res.send({ status: 200, data: data });
-				}
-				else{
+				} else {
 					res.send({ status: 404, data: "Block(s) not found" });
 				}
 			});
-		}
-		else {
+			} else {
+				res.send({
+					status: 200,
+					data: `Maximum allowed Block Range limit is ${blockRangeLimit}`
+				});
+			}
+		} else {
 			return requtil.invalidRequest(req, res);
 		}
-
-	});
+    });
 
 
 	/**
